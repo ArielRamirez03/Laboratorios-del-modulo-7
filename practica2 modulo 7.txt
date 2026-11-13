@@ -1,0 +1,102 @@
+PRACTICA 2 - FILESERVER SAMBA (MODULO VII)
+Servidor: Red Hat secundario (10.0.0.37)
+Cliente: Windows 10 VM (10.0.0.35)
+
+=====================================================
+1. VMware
+=====================================================
+# Snapshot limpio de las VMs y encenderlas
+
+=====================================================
+2. Red Hat secundario - Instalar Samba
+=====================================================
+sudo dnf install -y samba samba-client
+
+=====================================================
+3. Red Hat secundario - Crear la carpeta compartida
+=====================================================
+sudo mkdir -p /srv/samba/compartida
+
+=====================================================
+4. Red Hat secundario - Crear los 100 archivos
+=====================================================
+sudo touch /srv/samba/compartida/adrian{1..100}
+
+=====================================================
+5. Red Hat secundario - Grupo y usuario
+=====================================================
+sudo groupadd sambausers
+sudo useradd -M -s /sbin/nologin -G sambausers adrian
+
+=====================================================
+6. Red Hat secundario - Agregar usuario a Samba
+=====================================================
+sudo smbpasswd -a adrian
+
+=====================================================
+7. Red Hat secundario - Permisos de la carpeta
+=====================================================
+sudo chown -R root:sambausers /srv/samba/compartida
+sudo chmod -R 2770 /srv/samba/compartida
+
+=====================================================
+8. Red Hat secundario - SELinux
+=====================================================
+sudo chcon -R -t samba_share_t /srv/samba/compartida
+
+=====================================================
+9. Red Hat secundario - Configurar el share
+=====================================================
+sudo cp /etc/samba/smb.conf /etc/samba/smb.conf.bak
+sudo tee -a /etc/samba/smb.conf <<'EOF'
+
+[compartida]
+   path = /srv/samba/compartida
+   valid users = @sambausers
+   read only = no
+   browseable = yes
+   create mask = 0660
+   directory mask = 2770
+   force group = sambausers
+EOF
+
+=====================================================
+10. Red Hat secundario - Verificar configuracion
+=====================================================
+testparm
+
+=====================================================
+11. Red Hat secundario - Arrancar servicios
+=====================================================
+sudo systemctl enable --now smb nmb
+
+=====================================================
+12. Red Hat secundario - Firewall
+=====================================================
+sudo firewall-cmd --permanent --add-service=samba
+sudo firewall-cmd --reload
+
+=====================================================
+13. Windows 10 VM - Mapear el disco
+=====================================================
+# Este equipo > pestana PC > Conectar a unidad de red
+# Unidad: Z:
+# Carpeta:
+\\10.0.0.37\compartida
+# Marcar "Conectar con otras credenciales"
+# Usuario:
+10.0.0.37\adrian
+# Contrasena: la del paso 6 (smbpasswd)
+# Mostrar los 100 archivos en Z:
+
+=====================================================
+14. Windows 10 VM - Editar el archivo
+=====================================================
+# Abrir Adrian99 con el Bloc de notas
+# Agregar la frase: el zumzum de la carabela
+# Guardar
+
+=====================================================
+15. Red Hat secundario - Validar el cambio
+=====================================================
+sudo cat /srv/samba/compartida/adrian99

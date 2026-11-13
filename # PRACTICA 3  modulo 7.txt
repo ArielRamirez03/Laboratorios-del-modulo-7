@@ -1,0 +1,61 @@
+# PRACTICA 3 - INSTALACION DE IDS SNORT 3 EN RED HAT (RHEL 10)
+# Basado en la documentacion oficial de Snort 3 (docs.snort.org y github.com/snort3), adaptado a RHEL 10
+# Maquina Red Hat (Snort): 10.0.0.36 - interfaz ens160
+# Maquina Windows (pruebas): 10.0.0.24
+
+# 1. Verificar sistema y red
+cat /etc/redhat-release
+ip a show ens160
+
+# 2. Instalar dependencias
+sudo dnf install -y --setopt=strict=0 gcc gcc-c++ cmake make git flex bison autoconf automake libtool \
+  libpcap-devel pcre2-devel zlib-devel openssl-devel hwloc-devel luajit-devel \
+  libdnet-devel libnfnetlink-devel libmnl-devel libunwind-devel xz-devel libuuid-devel pkgconf-pkg-config
+
+# 3. Compilar e instalar libdaq
+cd ~ && git clone https://github.com/snort3/libdaq.git && cd libdaq
+./bootstrap && ./configure && make -j$(nproc) && sudo make install
+echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf
+sudo ldconfig
+
+# 4. Compilar e instalar Snort 3
+cd ~ && git clone https://github.com/snort3/snort3.git && cd snort3
+export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig
+./configure_cmake.sh --prefix=/usr/local
+cd build && make -j$(nproc) && sudo make install
+sudo ldconfig
+sudo ln -sf /usr/local/bin/snort /usr/sbin/snort
+snort -V
+
+# 5. Configurar HOME_NET
+sudo sed -i "s|^HOME_NET = .*|HOME_NET = '10.0.0.0/24'|" /usr/local/etc/snort/snort.lua
+grep -n "^HOME_NET" /usr/local/etc/snort/snort.lua
+
+# 6. Crear las reglas (ICMP, 21, 22 y 80)
+sudo tee /usr/local/etc/snort/local.rules > /dev/null << 'EOF'
+alert icmp any any -> 10.0.0.36 any (msg:"ICMP Ping detectado"; sid:1000001; rev:1;)
+alert tcp any any -> 10.0.0.36 21 (msg:"Trafico hacia FTP puerto 21"; sid:1000002; rev:1;)
+alert tcp any any -> 10.0.0.36 22 (msg:"Trafico hacia SSH puerto 22"; sid:1000003; rev:1;)
+alert tcp any any -> 10.0.0.36 80 (msg:"Trafico hacia HTTP puerto 80"; sid:1000004; rev:1;)
+EOF
+cat /usr/local/etc/snort/local.rules
+
+# 7. Preparar servicios (opcional, para que 22 y 80 respondan)
+sudo systemctl start sshd
+sudo dnf install -y httpd && sudo systemctl start httpd
+sudo firewall-cmd --add-service=ssh --add-service=http
+
+# 8. Validar la configuracion
+sudo ethtool -K ens160 gro off lro off
+sudo snort -c /usr/local/etc/snort/snort.lua -R /usr/local/etc/snort/local.rules -T
+
+# 9. Ejecutar el IDS
+sudo snort -c /usr/local/etc/snort/snort.lua -R /usr/local/etc/snort/local.rules -i ens160 -A alert_fast -k none
+
+# 10. Pruebas desde Windows (10.0.0.24) en PowerShell
+# ping 10.0.0.36
+# Test-NetConnection 10.0.0.36 -Port 21
+# Test-NetConnection 10.0.0.36 -Port 22
+# Test-NetConnection 10.0.0.36 -Port 80
+
+# 11. Detener Snort: Ctrl + C (o: sudo pkill snort)
